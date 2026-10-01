@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Saving, restoring, and removing drafts of an open note go through its editor and change only the lines that differ, so the cursor stays on the same text and a restore can be undone with Cmd/Ctrl+Z.
+
 ## 0.3.0
 
 The first public release.

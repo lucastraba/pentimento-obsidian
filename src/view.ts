@@ -181,6 +181,15 @@ export class HistoryView extends ItemView {
     })
   }
 
+  private async copy(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text)
+      new Notice('Copied')
+    } catch {
+      new Notice('Copying failed')
+    }
+  }
+
   private drawCuttings(el: HTMLElement, cuttings: ReturnType<typeof collectCuttings>): void {
     el.createEl('p', {
       cls: 'pentimento-caption',
@@ -198,10 +207,7 @@ export class HistoryView extends ItemView {
       const copy = meta.createEl('a', { text: 'Copy', href: '#' })
       copy.addEventListener('click', (e) => {
         e.preventDefault()
-        navigator.clipboard.writeText(c.text).then(
-          () => new Notice('Copied'),
-          () => new Notice('Copying failed'),
-        )
+        void this.copy(c.text)
       })
     }
   }
@@ -223,8 +229,16 @@ export class ConfirmModal extends Modal {
     const go = row.createEl('button', { cls: this.destructive ? 'mod-warning' : 'mod-cta', text: this.action })
     go.addEventListener('click', () => {
       go.disabled = true
-      void this.onConfirm().finally(() => this.close())
+      void this.confirm()
     })
+  }
+
+  private async confirm(): Promise<void> {
+    try {
+      await this.onConfirm()
+    } finally {
+      this.close()
+    }
   }
 
   onClose(): void { this.contentEl.empty() }

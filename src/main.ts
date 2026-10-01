@@ -106,7 +106,7 @@ export default class PentimentoPlugin extends Plugin {
       const res = await saveDraft(this.store, file.path, {
         ...opts,
         author: this.settings.author || undefined,
-        updateCanonical: async (stamp) => { await this.app.vault.process(file, stamp) },
+        updateCanonical: (stamp) => this.rewriteNote(file, stamp),
       })
       if (!quiet) new Notice(`Saved ${res.rev}: ${res.summary}`)
       return true
@@ -127,11 +127,11 @@ export default class PentimentoPlugin extends Plugin {
       if (status?.dirty && status.latest) await saveDraft(this.store, file.path, {
         author: this.settings.author || undefined,
         summary: `Saved before restoring ${rev}`,
-        updateCanonical: async (stamp) => { await this.app.vault.process(file, stamp) },
+        updateCanonical: (stamp) => this.rewriteNote(file, stamp),
       })
       const res = await restoreDraft(this.store, file.path, rev, {
         author: this.settings.author || undefined,
-        updateCanonical: async (stamp) => { await this.app.vault.process(file, stamp) },
+        updateCanonical: (stamp) => this.rewriteNote(file, stamp),
       })
       new Notice(`Restored ${rev} as ${res.rev}`)
     } catch (e) {
@@ -139,6 +139,32 @@ export default class PentimentoPlugin extends Plugin {
     } finally {
       this.afterChange()
     }
+  }
+
+  /**
+   * Apply a whole-text rewrite to a note. An open note is changed through its editor, and
+   * only in the span that differs, so the cursor, folds, and undo history survive; a closed
+   * note is rewritten atomically with Vault.process.
+   */
+  private async rewriteNote(file: TFile, rewrite: (text: string) => string): Promise<void> {
+    const view = this.app.workspace.getLeavesOfType('markdown')
+      .map((leaf) => leaf.view)
+      .find((v): v is MarkdownView => v instanceof MarkdownView && v.file?.path === file.path)
+    if (!view) {
+      await this.app.vault.process(file, rewrite)
+      return
+    }
+    const editor = view.editor
+    const before = editor.getValue()
+    const after = rewrite(before)
+    if (after === before) return
+    let start = 0
+    while (start < before.length && start < after.length && before[start] === after[start]) start++
+    let end = 0
+    while (end < before.length - start && end < after.length - start
+      && before[before.length - 1 - end] === after[after.length - 1 - end]) end++
+    editor.replaceRange(after.slice(start, after.length - end), editor.offsetToPos(start), editor.offsetToPos(before.length - end))
+    await view.save()
   }
 
   private async flushEditor(file: TFile): Promise<void> {
@@ -174,7 +200,7 @@ export default class PentimentoPlugin extends Plugin {
         try {
           await this.flushEditor(file)
           const res = await removeHistory(this.store, file.path, {
-            updateCanonical: async (unstamp) => { await this.app.vault.process(file, unstamp) },
+            updateCanonical: (unstamp) => this.rewriteNote(file, unstamp),
           })
           new Notice(`Removed ${res.drafts} draft${res.drafts === 1 ? '' : 's'} from ${file.basename}`)
         } catch (e) {

@@ -1,0 +1,31 @@
+{
+  "name": "pentimento-obsidian",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Save drafts of a note and see what changed between them. Get back passages you cut, and restore any earlier draft.",
+  "scripts": {
+    "build": "tsc --noEmit -p . && node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "lint": "eslint .",
+    "test": "npm run build && node test/harness.mjs",
+    "install-vault": "node install.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@eslint/json": "^0.14.0",
+    "@types/node": "^26.6.3",
+    "esbuild": "^0.25.12",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
+    "obsidian": "^1.13.1",
+    "pentimento": "^0.12.0",
+    "typescript": "5.9",
+    "typescript-eslint": "^8.71.0"
+  },
+  "license": "MIT",
+  "author": "Lucas Traba",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucastraba/pentimento-obsidian.git"
+  }
+}

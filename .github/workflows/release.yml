@@ -1,0 +1,36 @@
+name: release
+# Obsidian installs a plugin from the GitHub release whose tag equals the manifest
+# version (no "v"), with main.js, manifest.json, and styles.css attached.
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Check the tag matches manifest.json, package.json, and versions.json
+        run: |
+          tag=${GITHUB_REF_NAME}
+          for v in "$(node -p "require('./manifest.json').version")" "$(node -p "require('./package.json').version")"; do
+            [ "$v" = "$tag" ] || { echo "tag $tag does not match version $v"; exit 1; }
+          done
+          node -e "const v=require('./versions.json'); if (!v['$tag']) { console.error('versions.json has no entry for $tag'); process.exit(1) }"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(awk "/^## ${GITHUB_REF_NAME}( |\$)/{f=1;next} /^## /{f=0} f" CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css \
+            --title "$GITHUB_REF_NAME" --notes "${notes:-Pentimento $GITHUB_REF_NAME}"

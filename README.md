@@ -4,7 +4,7 @@ Save drafts of a note without leaving Obsidian, and see what changed between the
 
 A pentimento is an earlier brushstroke showing through the paint on top of it. The plugin keeps your earlier drafts the same way: out of sight until you want them.
 
-![The drafts panel next to a note, showing what changed since the last draft](docs/changes.png)
+![Editing a line, seeing the change, saving a draft, and copying back a cut bridge](docs/pentimento-demo.gif)
 
 ## Using it
 
@@ -17,6 +17,8 @@ A pentimento is an earlier brushstroke showing through the paint on top of it. T
   - *Drafts*: every draft with its summary, date, and word count. "What changed" shows that draft's own changes. "Restore" brings it back as a new draft, after saving the note's current text, so nothing is lost.
   - *Cuttings*: passages you removed or rewrote completely in earlier drafts, with a Copy button. A passage that comes back in the note drops off the list.
 - **Remove drafts from this note…** deletes the note's drafts and its three Pentimento properties, after asking. The note's text stays as it is.
+
+![The Changes tab: unsaved edits against the latest draft](docs/changes.png)
 
 ![Cuttings: passages removed in earlier drafts](docs/cuttings.png)
 

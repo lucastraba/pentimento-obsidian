@@ -6,8 +6,6 @@ Save drafts of a note without leaving Obsidian, and see what changed between the
 
 A pentimento is an earlier brushstroke showing through the paint on top of it. The plugin keeps your earlier drafts the same way: out of sight until you want them.
 
-![Editing a line, seeing the change, saving a draft, and copying back a cut bridge](docs/pentimento-demo.gif)
-
 ## Using it
 
 - **Save draft** (the ribbon button, or the command palette) keeps a copy of the note as it is now. The summary is written for you from what changed, using your headings: "Rewrote Chorus", "Removed Bridge".
@@ -26,7 +24,7 @@ A pentimento is an earlier brushstroke showing through the paint on top of it. T
 
 ## Where drafts live
 
-Each draft is a copy of the note in a hidden `.history/<note>/` folder beside it, with a summary of each draft in `meta.yml`. Everything is plain text: it syncs with the rest of your vault and can be read without the plugin.
+Each draft is a copy of the note in a hidden `.history/<note>/` folder beside it, with a summary of each draft in `meta.yml`. Move or rename the note and its drafts go with it. Everything is plain text: it syncs with the rest of your vault and can be read without the plugin.
 
 The first draft adds three properties to the note: `Pentimento`, `Current Revision`, and `History Folder`. Saving a draft edits only those three lines, so your own properties stay exactly as you wrote them. (It edits those lines directly instead of through Obsidian's `processFrontMatter`, which would rewrite the whole properties block in its own format.) When the note is open, the cursor stays where it was and a restore can be undone with Cmd/Ctrl+Z.
 

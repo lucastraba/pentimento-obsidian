@@ -1,4 +1,4 @@
-import { MarkdownView, Modal, Notice, Plugin, Setting, TFile, type App } from 'obsidian'
+import { MarkdownView, Modal, Notice, normalizePath, Plugin, Setting, TFile, type App } from 'obsidian'
 import { draftStatus, readHistory, removeHistory, restoreDraft, saveDraft, type DraftStore, type SaveDraftOptions } from 'pentimento/drafts'
 import { DEFAULT_SETTINGS, PentimentoSettingTab, type PentimentoSettings } from './settings'
 import { vaultStore } from './store'
@@ -65,7 +65,10 @@ export default class PentimentoPlugin extends Plugin {
       if (file.path === this.app.workspace.getActiveFile()?.path) this.scheduleStatus(600)
       this.scheduleViewRefresh(file.path)
     }))
-    this.registerEvent(this.app.vault.on('rename', () => this.scheduleStatus(0)))
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      if (file instanceof TFile && file.extension === 'md') void this.followMove(file, oldPath)
+      this.scheduleStatus(0)
+    }))
 
     this.addSettingTab(new PentimentoSettingTab(this.app, this))
     this.app.workspace.onLayoutReady(() => {
@@ -178,6 +181,49 @@ export default class PentimentoPlugin extends Plugin {
     this.scheduleStatus(0)
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
       if (leaf.view instanceof HistoryView) void leaf.view.refresh()
+    }
+  }
+
+  /**
+   * A note's history lives beside it, at a path relative to the note. When a note with drafts
+   * moves to another folder, its history folder moves with it. (Renaming in place needs nothing;
+   * moving a whole folder carries its .history along.)
+   */
+  private async followMove(file: TFile, oldPath: string): Promise<void> {
+    const folderOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+    const oldFolder = folderOf(oldPath)
+    const newFolder = folderOf(file.path)
+    if (oldFolder === newFolder) return
+    const cached: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.['History Folder']
+    const historyRel = typeof cached === 'string'
+      ? cached
+      : /^History Folder:\s*(.+)$/m.exec(await this.app.vault.cachedRead(file))?.[1]?.trim()
+    if (typeof historyRel !== 'string' || !historyRel || historyRel.startsWith('/') || historyRel.split('/').includes('..')) return
+    const adapter = this.app.vault.adapter
+    const join = (folder: string, rel: string) => normalizePath(folder ? `${folder}/${rel}` : rel)
+    const from = join(oldFolder, historyRel)
+    const to = join(newFolder, historyRel)
+    if (!(await adapter.exists(from))) return
+    if (await adapter.exists(to)) {
+      new Notice(`Pentimento: ${file.basename} moved, but ${to} already exists, so its drafts stayed in ${from}.`, 10000)
+      return
+    }
+    try {
+      const parent = folderOf(to)
+      if (parent && !(await adapter.exists(parent))) await adapter.mkdir(parent)
+      await adapter.rename(from, to)
+      // the old .history folder goes once its last note has left; the adapter's listing
+      // trails a rename slightly, so it's checked after a moment
+      const oldParent = folderOf(from)
+      if (oldParent.endsWith('.history')) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500))
+        // confirmed empty just before; Obsidian's non-recursive rmdir leaves hidden folders in place
+        if (await this.store.isEmptyFolder(oldParent)) await this.store.rmdir(oldParent)
+      }
+    } catch (e) {
+      new Notice(`Pentimento: couldn't move the drafts of ${file.basename}: ${e instanceof Error ? e.message : String(e)}`, 10000)
+    } finally {
+      this.afterChange()
     }
   }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- Moving a note to another folder takes its drafts along. Before, the drafts stayed behind in the old folder and the panel showed none. Renaming a note in place and moving a whole folder already kept them.
+- In the Changes tab, a heading that was added, removed, or renamed shows as a section label instead of raw `## Heading` text.
+
 ## 0.3.3
 
 - Fixed: after saving a draft of an open note, the Properties box kept showing the previous revision until the note was reopened (since 0.3.1). The file itself was always right.

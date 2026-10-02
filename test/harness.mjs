@@ -30,12 +30,14 @@ const app = {
       mkdir: async (p) => fs.mkdirSync(abs(p), { recursive: true }),
       remove: async (p) => fs.rmSync(abs(p)),
       rmdir: async (p) => fs.rmSync(abs(p), { recursive: true }),
+      rename: async (a, b) => fs.renameSync(abs(a), abs(b)),
       stat: async (p) => (fs.existsSync(abs(p)) ? { mtime: fs.statSync(abs(p)).mtimeMs } : null),
       list: async (p) => ({
         files: fs.readdirSync(abs(p)).filter((f) => fs.statSync(path.join(abs(p), f)).isFile()),
         folders: fs.readdirSync(abs(p)).filter((f) => fs.statSync(path.join(abs(p), f)).isDirectory()),
       }),
     },
+    cachedRead: async (file) => fs.readFileSync(abs(file.path), 'utf8'),
     process: async (file, fn) => { const out = fn(fs.readFileSync(abs(file.path), 'utf8')); fs.writeFileSync(abs(file.path), out); return out },
     getMarkdownFiles: () => fs.readdirSync(root).filter((f) => f.endsWith('.md')).map((f) => new TFile(f)),
     on: (name, fn) => { handlers[name] = fn; return {} },
@@ -142,6 +144,23 @@ await confirmations[0].onConfirm()
 assert.ok(!fs.existsSync(abs('.history')), 'the history folder is gone, and the empty .history with it')
 assert.equal(read('Harbor.md'), before, 'the note keeps its text and loses only the properties')
 assert.match(notices.at(-1), /^Removed 6 drafts from Harbor$/)
+
+// moving a note to another folder takes its drafts along
+fs.mkdirSync(abs('Songs')); fs.mkdirSync(abs('Archive'))
+write('Songs/Move.md', '# Move\n\nfirst words of a song\n')
+const moving = new TFile('Songs/Move.md')
+await plugin.saveFile(moving)
+assert.ok(fs.existsSync(abs('Songs/.history/Move/r001.md')))
+fs.renameSync(abs('Songs/Move.md'), abs('Archive/Move.md'))
+handlers.rename(new TFile('Archive/Move.md'), 'Songs/Move.md')
+await new Promise((r) => setTimeout(r, 800))
+assert.ok(fs.existsSync(abs('Archive/.history/Move/r001.md')), 'the drafts followed the note')
+assert.ok(!fs.existsSync(abs('Songs/.history')), 'the emptied .history folder is gone')
+// renaming in place leaves the history where its frontmatter points
+fs.renameSync(abs('Archive/Move.md'), abs('Archive/Moved.md'))
+handlers.rename(new TFile('Archive/Moved.md'), 'Archive/Move.md')
+await settle()
+assert.ok(fs.existsSync(abs('Archive/.history/Move/r001.md')), 'a rename in place moves nothing')
 
 console.log('harness: all checks passed')
 console.log(notices.join('\n'))

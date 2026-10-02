@@ -1,3 +1,5 @@
+![Pentimento in action: edit a line, see the change, save a draft, get back a cut bridge](https://raw.githubusercontent.com/lucastraba/pentimento-obsidian/main/docs/pentimento-demo.gif)
+
 # Pentimento for Obsidian
 
 Save drafts of a note without leaving Obsidian, and see what changed between them, what you cut, and any earlier draft you want back.

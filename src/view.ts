@@ -2,6 +2,7 @@ import { ItemView, Modal, Notice, sanitizeHTMLToDom, setIcon, type App, type TFi
 import { readHistory, type DocHistory } from 'pentimento/drafts'
 import { collectCuttings, renderDiffHtml, wordCount } from 'pentimento/semdiff'
 import type PentimentoPlugin from './main'
+import { isDraftCopy } from './store'
 
 export const VIEW_TYPE = 'pentimento-history'
 
@@ -36,10 +37,10 @@ export class HistoryView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.registerEvent(this.app.workspace.on('file-open', (file) => {
-      if (file && file.extension === 'md') this.show(file)
+      if (file && file.extension === 'md' && !isDraftCopy(file.path)) this.show(file)
     }))
     const active = this.app.workspace.getActiveFile()
-    this.show(active && active.extension === 'md' ? active : null)
+    this.show(active && active.extension === 'md' && !isDraftCopy(active.path) ? active : null)
   }
 
   show(file: TFile | null): void {

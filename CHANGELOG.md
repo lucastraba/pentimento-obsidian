@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Obsidian Sync: a new setting, **Sync drafts with Obsidian Sync**, keeps new notes' drafts in a visible `_history` folder, because Sync skips the hidden `.history`. Turning it on offers to move existing drafts, and the command "Move all drafts to the folder chosen in settings" moves them either way. See the README for what changes when drafts aren't hidden.
+- Saved drafts are never treated as notes, even where Obsidian lists them: no Save draft, no daily draft, and no drafts panel for a draft itself.
+- Needs `pentimento` 0.13.
+
 ## 0.3.4
 
 - Moving a note to another folder takes its drafts along. Before, the drafts stayed behind in the old folder and the panel showed none. Renaming a note in place and moving a whole folder already kept them.

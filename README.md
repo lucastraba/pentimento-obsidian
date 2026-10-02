@@ -24,11 +24,23 @@ A pentimento is an earlier brushstroke showing through the paint on top of it. T
 
 ## Where drafts live
 
-Each draft is a copy of the note in a hidden `.history/<note>/` folder beside it, with a summary of each draft in `meta.yml`. Move or rename the note and its drafts go with it. Everything is plain text: it syncs with the rest of your vault and can be read without the plugin.
+Each draft is a copy of the note in a hidden `.history/<note>/` folder beside it, with a summary of each draft in `meta.yml`. Move or rename the note and its drafts go with it. Everything is plain text and can be read without the plugin. Syncthing, iCloud, Dropbox, and git carry the drafts with the rest of your vault; Obsidian Sync doesn't (see below).
 
 The first draft adds three properties to the note: `Pentimento`, `Current Revision`, and `History Folder`. Saving a draft edits only those three lines, so your own properties stay exactly as you wrote them. (It edits those lines directly instead of through Obsidian's `processFrontMatter`, which would rewrite the whole properties block in its own format.) When the note is open, the cursor stays where it was and a restore can be undone with Cmd/Ctrl+Z.
 
 The plugin reads and writes the `.history` folders through Obsidian's file adapter, because Obsidian's vault index leaves out hidden folders. It never touches files outside a note's own history folder, the note itself, and its own settings.
+
+### With Obsidian Sync
+
+Obsidian Sync skips hidden folders, so drafts in `.history` stay on the device that saved them. Turn on **Sync drafts with Obsidian Sync** and new notes keep their drafts in a visible `_history/<note>/` folder instead, which Sync carries. When you turn it on, the plugin offers to move the drafts of notes that already have some, and "Move all drafts to the folder chosen in settings" does the same later (or moves them back when you turn it off).
+
+Because `_history` isn't hidden, Obsidian treats the saved drafts as notes:
+
+- They show up in search, the graph, and the quick switcher. Add `_history` to Settings → Files and links → Excluded files to keep them out of those.
+- Renaming a note also rewrites links to it inside saved drafts, even with `_history` excluded, so an old draft's links point at the new name. The plugin itself never treats a saved draft as a note.
+- Save drafts of a note on one device at a time, and let Sync finish before saving on another. Two devices that save a draft of the same note before syncing both write the same `rNNN.md` and `meta.yml`, and Sync can't keep both.
+
+The command-line tool follows this setting for notes in the same vault.
 
 Drafts use the same format as the [Pentimento command-line tool](https://github.com/lucastraba/pentimento), so you can use either, or both, on the same notes.
 
@@ -36,6 +48,7 @@ Drafts use the same format as the [Pentimento command-line tool](https://github.
 
 - **Your name** is recorded on each draft.
 - **Save a draft every day** (off by default): once a day, notes that already have drafts and changed since their last one get a new draft. A note you've edited in the last 15 minutes waits until you stop.
+- **Sync drafts with Obsidian Sync** (off by default): new notes keep their drafts in `_history` instead of the hidden `.history`. See [With Obsidian Sync](#with-obsidian-sync).
 
 ## Installing
 

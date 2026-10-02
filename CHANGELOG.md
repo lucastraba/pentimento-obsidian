@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+- Fixed: after saving a draft of an open note, the Properties box kept showing the previous revision until the note was reopened (since 0.3.1). The file itself was always right.
+- The Changes tab follows the note as you type, so unsaved edits show up without saving a draft.
+- A struck-out word and its replacement no longer run together.
+
 ## 0.3.2
 
 - Release files come with signed build provenance, so anyone can check they were built from this repository: `gh attestation verify main.js -R lucastraba/pentimento-obsidian`.
@@ -8,7 +14,7 @@
 
 ## 0.3.1
 
-- Saving, restoring, and removing drafts of an open note go through its editor and change only the lines that differ, so the cursor stays on the same text and a restore can be undone with Cmd/Ctrl+Z.
+- Saving, restoring, and removing drafts of an open note keep the cursor on the same text, and a restore can be undone with Cmd/Ctrl+Z.
 
 ## 0.3.0
 

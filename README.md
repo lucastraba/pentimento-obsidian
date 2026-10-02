@@ -24,7 +24,7 @@ A pentimento is an earlier brushstroke showing through the paint on top of it. T
 
 Each draft is a copy of the note in a hidden `.history/<note>/` folder beside it, with a summary of each draft in `meta.yml`. Everything is plain text: it syncs with the rest of your vault and can be read without the plugin.
 
-The first draft adds three properties to the note: `Pentimento`, `Current Revision`, and `History Folder`. Saving a draft edits only those three lines, so your own properties stay exactly as you wrote them. (It edits those lines directly instead of through Obsidian's `processFrontMatter`, which would rewrite the whole properties block in its own format.) When the note is open, changes go through its editor, so the cursor stays put and a restore can be undone.
+The first draft adds three properties to the note: `Pentimento`, `Current Revision`, and `History Folder`. Saving a draft edits only those three lines, so your own properties stay exactly as you wrote them. (It edits those lines directly instead of through Obsidian's `processFrontMatter`, which would rewrite the whole properties block in its own format.) When the note is open, the cursor stays where it was and a restore can be undone with Cmd/Ctrl+Z.
 
 The plugin reads and writes the `.history` folders through Obsidian's file adapter, because Obsidian's vault index leaves out hidden folders. It never touches files outside a note's own history folder, the note itself, and its own settings.
 

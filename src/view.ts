@@ -27,6 +27,9 @@ export class HistoryView extends ItemView {
     super(leaf)
   }
 
+  /** the note this panel is showing, if any */
+  get notePath(): string | null { return this.file?.path ?? null }
+
   getViewType(): string { return VIEW_TYPE }
   getDisplayText(): string { return 'Drafts' }
   getIcon(): string { return 'history' }

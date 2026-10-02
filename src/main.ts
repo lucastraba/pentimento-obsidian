@@ -13,6 +13,7 @@ export default class PentimentoPlugin extends Plugin {
   store!: DraftStore
   private statusEl!: HTMLElement
   private statusTimer: number | null = null
+  private viewTimer: number | null = null
   private saving = new Set<string>()
 
   async onload(): Promise<void> {
@@ -62,6 +63,7 @@ export default class PentimentoPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on('file-open', () => this.scheduleStatus(0)))
     this.registerEvent(this.app.vault.on('modify', (file) => {
       if (file.path === this.app.workspace.getActiveFile()?.path) this.scheduleStatus(600)
+      this.scheduleViewRefresh(file.path)
     }))
     this.registerEvent(this.app.vault.on('rename', () => this.scheduleStatus(0)))
 
@@ -75,6 +77,7 @@ export default class PentimentoPlugin extends Plugin {
 
   onunload(): void {
     if (this.statusTimer !== null) window.clearTimeout(this.statusTimer)
+    if (this.viewTimer !== null) window.clearTimeout(this.viewTimer)
   }
 
   async loadSettings(): Promise<void> {
@@ -142,29 +145,15 @@ export default class PentimentoPlugin extends Plugin {
   }
 
   /**
-   * Apply a whole-text rewrite to a note. An open note is changed through its editor, and
-   * only in the span that differs, so the cursor, folds, and undo history survive; a closed
-   * note is rewritten atomically with Vault.process.
+   * Apply a whole-text rewrite to a note with Vault.process, after writing out anything
+   * still unsaved in its editor. Obsidian merges the result into an open editor, so the
+   * cursor stays on the same text, the change can be undone, and the Properties box
+   * updates. (Editing through the editor directly left the Properties box showing the
+   * old revision.)
    */
   private async rewriteNote(file: TFile, rewrite: (text: string) => string): Promise<void> {
-    const view = this.app.workspace.getLeavesOfType('markdown')
-      .map((leaf) => leaf.view)
-      .find((v): v is MarkdownView => v instanceof MarkdownView && v.file?.path === file.path)
-    if (!view) {
-      await this.app.vault.process(file, rewrite)
-      return
-    }
-    const editor = view.editor
-    const before = editor.getValue()
-    const after = rewrite(before)
-    if (after === before) return
-    let start = 0
-    while (start < before.length && start < after.length && before[start] === after[start]) start++
-    let end = 0
-    while (end < before.length - start && end < after.length - start
-      && before[before.length - 1 - end] === after[after.length - 1 - end]) end++
-    editor.replaceRange(after.slice(start, after.length - end), editor.offsetToPos(start), editor.offsetToPos(before.length - end))
-    await view.save()
+    await this.flushEditor(file)
+    await this.app.vault.process(file, rewrite)
   }
 
   private async flushEditor(file: TFile): Promise<void> {
@@ -172,6 +161,17 @@ export default class PentimentoPlugin extends Plugin {
       const view = leaf.view
       if (view instanceof MarkdownView && view.file?.path === file.path) await view.save()
     }
+  }
+
+  /** The panel follows the note as it changes, so "Changes" shows edits before they're saved. */
+  private scheduleViewRefresh(path: string): void {
+    if (this.viewTimer !== null) window.clearTimeout(this.viewTimer)
+    this.viewTimer = window.setTimeout(() => {
+      this.viewTimer = null
+      for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+        if (leaf.view instanceof HistoryView && leaf.view.notePath === path) void leaf.view.refresh()
+      }
+    }, 800)
   }
 
   private afterChange(): void {

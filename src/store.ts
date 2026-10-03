@@ -5,6 +5,14 @@ import type { DraftStore } from 'pentimento/drafts'
  * The draft store over Obsidian's vault adapter. The adapter reaches hidden folders such
  * as `.history/`, which the vault's file index leaves out, and works on mobile too.
  */
+/**
+ * True for a saved draft rather than a note: a file inside a history folder. Drafts are
+ * copies of their note, properties included, and in a visible `_history` folder Obsidian
+ * lists them like notes, so the plugin must never save, list, or move them as notes.
+ */
+export const isDraftCopy = (path: string): boolean =>
+  path.split('/').slice(0, -1).some((segment) => segment === '.history' || segment === '_history')
+
 export const vaultStore = (app: App): DraftStore => {
   const adapter = app.vault.adapter
   const p = (path: string) => normalizePath(path)

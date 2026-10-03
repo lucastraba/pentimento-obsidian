@@ -41,7 +41,21 @@ const app = {
     },
     cachedRead: async (file) => fs.readFileSync(abs(file.path), 'utf8'),
     process: async (file, fn) => { const out = fn(fs.readFileSync(abs(file.path), 'utf8')); fs.writeFileSync(abs(file.path), out); return out },
-    getMarkdownFiles: () => { enumerationCount++; return fs.readdirSync(root).filter((f) => f.endsWith('.md')).map((f) => new TFile(f)) },
+    getMarkdownFiles: () => {
+      enumerationCount++
+      // Obsidian lists notes in every visible folder, never in hidden ones
+      const out = []
+      const walk = (rel) => {
+        for (const e of fs.readdirSync(abs(rel), { withFileTypes: true })) {
+          if (e.name.startsWith('.')) continue
+          const p = rel ? `${rel}/${e.name}` : e.name
+          if (e.isDirectory()) walk(p)
+          else if (e.name.endsWith('.md')) out.push(new TFile(p))
+        }
+      }
+      walk('')
+      return out
+    },
     on: (name, fn) => { handlers[name] = fn; return {} },
   },
   workspace: {
@@ -206,6 +220,61 @@ await plugin.runDailyDrafts()
 assert.ok(metadataReads.includes('Archive/Moved.md'), 'daily drafts follow renamed notes')
 assert.ok(!metadataReads.includes('Songs/Move.md') && !metadataReads.includes('Archive/Move.md'), 'old paths leave daily checks')
 assert.equal(enumerationCount, 1, 'file and metadata events never rescan the vault')
+
+// Obsidian Sync: with the setting on, new notes keep their drafts in a visible _history folder
+plugin.settings.historyFolder = '_history'
+write('Fresh.md', '# Fresh\n\na new song for the synced folder\n')
+const fresh = new TFile('Fresh.md')
+await plugin.saveFile(fresh)
+assert.ok(fs.existsSync(abs('_history/Fresh/r001.md')), 'the first draft starts in _history')
+assert.match(read('Fresh.md'), /History Folder: _history\/Fresh/)
+// a saved draft there looks like a note to Obsidian, but is never treated as one
+active = new TFile('_history/Fresh/r001.md')
+assert.equal(plugin.commands['save-draft'].checkCallback(true), false, 'a saved draft is not a note')
+assert.equal(plugin.commands['remove-drafts'].checkCallback(true), false)
+plugin.settings.dailyDrafts = true
+const oldish = new Date(Date.now() - 60 * 60 * 1000)
+fs.utimesSync(abs('_history/Fresh/r001.md'), oldish, oldish)
+// Obsidian indexes the draft and reports it like any note
+handlers['metadata:changed'](new TFile('_history/Fresh/r001.md'))
+await plugin.runDailyDrafts()
+assert.ok(!fs.existsSync(abs('_history/Fresh/_history')), 'daily drafts never start a history inside a history')
+active = fresh
+
+// a note that already has drafts in .history moves with the command, property and all
+write('Older.md', '# Older\n\nwritten before syncing was on\n')
+plugin.settings.historyFolder = '.history'
+await plugin.saveFile(new TFile('Older.md'))
+plugin.settings.historyFolder = '_history'
+const offered = confirmations.length
+await plugin.offerMove()
+assert.equal(confirmations.length, offered + 1, 'turning sync on offers to move existing drafts')
+await confirmations.at(-1).onConfirm()
+assert.ok(fs.existsSync(abs('_history/Older/r001.md')), 'the drafts moved to _history')
+assert.ok(!fs.existsSync(abs('.history')), 'the emptied .history folder is gone')
+assert.match(read('Older.md'), /History Folder: _history\/Older/)
+// the renamed note from earlier (Archive/Moved.md, drafts in .history/Move) moves too
+assert.match(notices.at(-1), /^Moved the drafts of 2 notes to _history$/)
+assert.ok(fs.existsSync(abs('Archive/_history/Move/r001.md')) && !fs.existsSync(abs('Archive/.history')))
+const { verifyDoc } = await import('pentimento/dist/verify.js').catch(() => import(path.join(process.cwd(), 'node_modules/pentimento/dist/verify.js')))
+assert.deepEqual(verifyDoc(abs('Older.md')).filter((i) => i.level === 'error'), [], 'the CLI agrees with the moved history')
+await plugin.saveFile(new TFile('Older.md'))
+assert.ok(fs.existsSync(abs('_history/Older/r002.md')), 'later drafts go to the new place')
+// and back: turning sync off moves them into hidden folders again
+plugin.settings.historyFolder = '.history'
+await plugin.moveHistories()
+assert.ok(fs.existsSync(abs('.history/Older/r002.md')) && fs.existsSync(abs('.history/Fresh/r001.md')))
+assert.ok(!fs.existsSync(abs('_history')), 'the emptied _history folder is gone')
+plugin.settings.historyFolder = '_history'
+await plugin.moveHistories()
+
+// a note moved to another folder takes its _history along, and the emptied one goes
+fs.mkdirSync(abs('Elsewhere'))
+fs.renameSync(abs('Fresh.md'), abs('Elsewhere/Fresh.md'))
+handlers.rename(new TFile('Elsewhere/Fresh.md'), 'Fresh.md')
+await new Promise((r) => setTimeout(r, 800))
+assert.ok(fs.existsSync(abs('Elsewhere/_history/Fresh/r001.md')), 'the drafts followed the note')
+assert.ok(fs.existsSync(abs('_history/Older')), 'other notes keep their drafts')
 
 console.log('harness: all checks passed')
 console.log(notices.join('\n'))

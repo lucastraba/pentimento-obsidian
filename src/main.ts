@@ -1,7 +1,8 @@
 import { MarkdownView, Modal, Notice, normalizePath, Plugin, Setting, TFile, type App } from 'obsidian'
-import { draftStatus, readHistory, removeHistory, restoreDraft, saveDraft, type DraftStore, type SaveDraftOptions } from 'pentimento/drafts'
+import { draftStatus, holdsHistories, readHistory, removeHistory, restoreDraft, saveDraft, type DraftStore, type SaveDraftOptions } from 'pentimento/drafts'
+import { isHistoryFolder, stampFrontmatter } from 'pentimento/model'
 import { DEFAULT_SETTINGS, PentimentoSettingTab, type PentimentoSettings } from './settings'
-import { vaultStore } from './store'
+import { isDraftCopy, vaultStore } from './store'
 import { ConfirmModal, HistoryView, VIEW_TYPE } from './view'
 
 const DAILY_CHECK_MS = 30 * 60 * 1000
@@ -45,6 +46,11 @@ export default class PentimentoPlugin extends Plugin {
       id: 'toggle-drafts',
       name: 'Show or hide drafts',
       callback: () => void this.toggleHistory(),
+    })
+    this.addCommand({
+      id: 'move-drafts',
+      name: 'Move all drafts to the folder chosen in settings',
+      callback: () => void this.moveHistories(),
     })
     this.addCommand({
       id: 'remove-drafts',
@@ -93,6 +99,7 @@ export default class PentimentoPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     this.settings = { ...DEFAULT_SETTINGS, ...((await this.loadData()) as Partial<PentimentoSettings> | null) }
+    if (!isHistoryFolder(this.settings.historyFolder)) this.settings.historyFolder = DEFAULT_SETTINGS.historyFolder
   }
 
   async saveSettings(): Promise<void> {
@@ -101,7 +108,7 @@ export default class PentimentoPlugin extends Plugin {
 
   private activeNote(): TFile | null {
     const file = this.app.workspace.getActiveFile()
-    return file && file.extension === 'md' ? file : null
+    return file && file.extension === 'md' && !isDraftCopy(file.path) ? file : null
   }
 
   private withActiveNote(checking: boolean, run: (file: TFile) => unknown): boolean {
@@ -120,6 +127,7 @@ export default class PentimentoPlugin extends Plugin {
       const res = await saveDraft(this.store, file.path, {
         ...opts,
         author: this.settings.author || undefined,
+        historyFolder: this.settings.historyFolder,
         updateCanonical: (stamp) => this.rewriteNote(file, stamp),
       })
       if (this.dailyNotesInitialized) this.dailyNotes.set(file.path, file)
@@ -141,6 +149,7 @@ export default class PentimentoPlugin extends Plugin {
       const status = await draftStatus(this.store, file.path)
       if (status?.dirty && status.latest) await saveDraft(this.store, file.path, {
         author: this.settings.author || undefined,
+        historyFolder: this.settings.historyFolder,
         summary: `Saved before restoring ${rev}`,
         updateCanonical: (stamp) => this.rewriteNote(file, stamp),
       })
@@ -196,20 +205,16 @@ export default class PentimentoPlugin extends Plugin {
   /**
    * A note's history lives beside it, at a path relative to the note. When a note with drafts
    * moves to another folder, its history folder moves with it. (Renaming in place needs nothing;
-   * moving a whole folder carries its .history along.)
+   * moving a whole folder carries its .history or _history along.)
    */
   private async followMove(file: TFile, oldPath: string): Promise<void> {
-    const folderOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+    if (isDraftCopy(file.path) || isDraftCopy(oldPath)) return
     const oldFolder = folderOf(oldPath)
     const newFolder = folderOf(file.path)
     if (oldFolder === newFolder) return
-    const cached: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.['History Folder']
-    const historyRel = typeof cached === 'string'
-      ? cached
-      : /^History Folder:\s*(.+)$/m.exec(await this.app.vault.cachedRead(file))?.[1]?.trim()
-    if (typeof historyRel !== 'string' || !historyRel || historyRel.startsWith('/') || historyRel.split('/').includes('..')) return
+    const historyRel = await this.historyFolderOf(file)
+    if (!historyRel) return
     const adapter = this.app.vault.adapter
-    const join = (folder: string, rel: string) => normalizePath(folder ? `${folder}/${rel}` : rel)
     const from = join(oldFolder, historyRel)
     const to = join(newFolder, historyRel)
     if (!(await adapter.exists(from))) return
@@ -221,10 +226,10 @@ export default class PentimentoPlugin extends Plugin {
       const parent = folderOf(to)
       if (parent && !(await adapter.exists(parent))) await adapter.mkdir(parent)
       await adapter.rename(from, to)
-      // the old .history folder goes once its last note has left; the adapter's listing
-      // trails a rename slightly, so it's checked after a moment
+      // the old .history (or _history) folder goes once its last note has left; the
+      // adapter's listing trails a rename slightly, so it's checked after a moment
       const oldParent = folderOf(from)
-      if (oldParent.endsWith('.history')) {
+      if (holdsHistories(historyRel, file.basename)) {
         await new Promise((resolve) => window.setTimeout(resolve, 500))
         // confirmed empty just before; Obsidian's non-recursive rmdir leaves hidden folders in place
         if (await this.store.isEmptyFolder(oldParent)) await this.store.rmdir(oldParent)
@@ -234,6 +239,95 @@ export default class PentimentoPlugin extends Plugin {
     } finally {
       this.afterChange()
     }
+  }
+
+  /** A note's `History Folder` property, when it is a safe relative path. */
+  private async historyFolderOf(file: TFile): Promise<string | null> {
+    const cached: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.['History Folder']
+    const historyRel = typeof cached === 'string'
+      ? cached
+      : /^History Folder:\s*(.+)$/m.exec(await this.app.vault.cachedRead(file))?.[1]?.trim()
+    if (typeof historyRel !== 'string' || !historyRel || historyRel.startsWith('/') || historyRel.split('/').includes('..')) return null
+    return historyRel
+  }
+
+  /** Notes whose history is in the other of the two history folders, with where it would go. */
+  private async notesToMove(): Promise<{ file: TFile; from: string; to: string; toRel: string }[]> {
+    const target = this.settings.historyFolder
+    const out: { file: TFile; from: string; to: string; toRel: string }[] = []
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (isDraftCopy(file.path) || this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] !== true) continue
+      const historyRel = await this.historyFolderOf(file)
+      const segments = historyRel?.split('/') ?? []
+      // only histories Pentimento placed itself: `.history/<note>` or `_history/<note>`
+      if (segments.length !== 2 || !isHistoryFolder(segments[0]) || segments[0] === target) continue
+      const folder = folderOf(file.path)
+      const toRel = `${target}/${segments[1]}`
+      out.push({ file, from: join(folder, historyRel!), to: join(folder, toRel), toRel })
+    }
+    return out
+  }
+
+  /** After the setting changes: offer to move the notes that already have drafts. */
+  async offerMove(): Promise<void> {
+    const notes = await this.notesToMove()
+    if (!notes.length) return
+    const n = `${notes.length} note${notes.length === 1 ? '' : 's'}`
+    const where = this.settings.historyFolder
+    new ConfirmModal(
+      this.app,
+      `Move the drafts of ${n} to ${where}?`,
+      where === '_history'
+        ? `Their drafts are in hidden .history folders, which Obsidian Sync skips. Moving them puts them where new drafts go, and updates each note's History Folder property. You can do this later with the command "Move all drafts to the folder chosen in settings".`
+        : `Their drafts are in _history folders. Moving them back hides them from search and the graph again, and stops Obsidian Sync carrying them. Each note's History Folder property is updated.`,
+      'Move',
+      () => this.moveHistories(),
+    ).open()
+  }
+
+  /** Move every note's history into the folder chosen in settings, updating its property. */
+  async moveHistories(): Promise<void> {
+    const adapter = this.app.vault.adapter
+    const moved: string[] = []
+    const skipped: string[] = []
+    const left = new Set<string>()
+    for (const { file, from, to, toRel } of await this.notesToMove()) {
+      if (!(await adapter.exists(from))) continue
+      if (await adapter.exists(`${from}/.lock`)) { skipped.push(`${file.basename} (a draft is being saved)`); continue }
+      if (await adapter.exists(to)) { skipped.push(`${file.basename} (${to} already exists)`); continue }
+      try {
+        await this.flushEditor(file)
+        const parent = folderOf(to)
+        if (parent && !(await adapter.exists(parent))) await adapter.mkdir(parent)
+        await adapter.rename(from, to)
+        try {
+          await this.rewriteNote(file, (text) => stampFrontmatter(text, { 'History Folder': toRel }))
+        } catch (e) {
+          // the note still points at the old place, so its drafts go back there
+          const reason = e instanceof Error ? e.message : String(e)
+          try {
+            await adapter.rename(to, from)
+          } catch {
+            throw new Error(`${reason}; its drafts are in ${to} but the note still points at ${from}, so move them back by hand`)
+          }
+          throw e
+        }
+        moved.push(file.basename)
+        left.add(folderOf(from))
+      } catch (e) {
+        skipped.push(`${file.basename} (${e instanceof Error ? e.message : String(e)})`)
+      }
+    }
+    // the folders the drafts left go once they are empty; the adapter's listing trails a rename slightly
+    await new Promise((resolve) => window.setTimeout(resolve, 500))
+    for (const dir of left) {
+      try { if (await this.store.isEmptyFolder(dir)) await this.store.rmdir(dir) } catch { /* left in place */ }
+    }
+    const where = this.settings.historyFolder
+    if (moved.length) new Notice(`Moved the drafts of ${moved.length} note${moved.length === 1 ? '' : 's'} to ${where}`)
+    else if (!skipped.length) new Notice(`Every note's drafts are already in ${where}`)
+    if (skipped.length) new Notice(`Pentimento: not moved: ${skipped.join('; ')}`, 12000)
+    this.afterChange()
   }
 
   /** Ask, then take the note out of Pentimento: its drafts are deleted and its properties removed. */
@@ -328,7 +422,8 @@ export default class PentimentoPlugin extends Plugin {
 
   private trackDailyNote(file: TFile): void {
     if (!this.dailyNotesInitialized) return
-    if (file.extension === 'md' && this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] === true) {
+    // a saved draft in _history carries its note's properties, but is never a note
+    if (file.extension === 'md' && !isDraftCopy(file.path) && this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] === true) {
       this.dailyNotes.set(file.path, file)
     } else {
       this.dailyNotes.delete(file.path)
@@ -349,7 +444,7 @@ export default class PentimentoPlugin extends Plugin {
     const today = new Date().toDateString()
     const saved: string[] = []
     for (const file of [...this.dailyNotes.values()]) {
-      if (this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] !== true) continue
+      if (isDraftCopy(file.path) || this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] !== true) continue
       if (Date.now() - file.stat.mtime < QUIET_MS) continue
       try {
         const s = await draftStatus(this.store, file.path)
@@ -360,6 +455,9 @@ export default class PentimentoPlugin extends Plugin {
     if (saved.length) new Notice(`Saved daily drafts: ${saved.join(', ')}`)
   }
 }
+
+const folderOf = (p: string): string => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+const join = (folder: string, rel: string): string => normalizePath(folder ? `${folder}/${rel}` : rel)
 
 class NoteModal extends Modal {
   private summary = ''

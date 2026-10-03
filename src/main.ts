@@ -15,6 +15,8 @@ export default class PentimentoPlugin extends Plugin {
   private statusTimer: number | null = null
   private viewTimer: number | null = null
   private saving = new Set<string>()
+  private dailyNotes = new Map<string, TFile>()
+  private dailyNotesInitialized = false
 
   async onload(): Promise<void> {
     await this.loadSettings()
@@ -65,7 +67,13 @@ export default class PentimentoPlugin extends Plugin {
       if (file.path === this.app.workspace.getActiveFile()?.path) this.scheduleStatus(600)
       this.scheduleViewRefresh(file.path)
     }))
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => this.trackDailyNote(file)))
+    this.registerEvent(this.app.vault.on('delete', (file) => {
+      this.dailyNotes.delete(file.path)
+    }))
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      this.dailyNotes.delete(oldPath)
+      if (file instanceof TFile) this.trackDailyNote(file)
       if (file instanceof TFile && file.extension === 'md') void this.followMove(file, oldPath)
       this.scheduleStatus(0)
     }))
@@ -114,6 +122,7 @@ export default class PentimentoPlugin extends Plugin {
         author: this.settings.author || undefined,
         updateCanonical: (stamp) => this.rewriteNote(file, stamp),
       })
+      if (this.dailyNotesInitialized) this.dailyNotes.set(file.path, file)
       if (!quiet) new Notice(`Saved ${res.rev}: ${res.summary}`)
       return true
     } catch (e) {
@@ -248,6 +257,7 @@ export default class PentimentoPlugin extends Plugin {
           const res = await removeHistory(this.store, file.path, {
             updateCanonical: (unstamp) => this.rewriteNote(file, unstamp),
           })
+          this.dailyNotes.delete(file.path)
           new Notice(`Removed ${res.drafts} draft${res.drafts === 1 ? '' : 's'} from ${file.basename}`)
         } catch (e) {
           new Notice(`Pentimento: ${e instanceof Error ? e.message : String(e)}`, 8000)
@@ -316,12 +326,29 @@ export default class PentimentoPlugin extends Plugin {
     this.statusEl.show()
   }
 
+  private trackDailyNote(file: TFile): void {
+    if (!this.dailyNotesInitialized) return
+    if (file.extension === 'md' && this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] === true) {
+      this.dailyNotes.set(file.path, file)
+    } else {
+      this.dailyNotes.delete(file.path)
+    }
+  }
+
   /** Once a day: a draft of each note that has drafts, changed since the last one, and sits idle. */
   async runDailyDrafts(): Promise<void> {
     if (!this.settings.dailyDrafts) return
+    // Discover existing histories once per session, only when daily drafts are enabled.
+    // Metadata events keep this set current, including notes stamped by the CLI.
+    if (!this.dailyNotesInitialized) {
+      this.dailyNotesInitialized = true
+      for (const file of this.app.vault.getMarkdownFiles()) this.trackDailyNote(file)
+    }
+    // Moving a parent folder updates its TFiles without a rename event for each note.
+    this.dailyNotes = new Map([...this.dailyNotes.values()].map((file) => [file.path, file]))
     const today = new Date().toDateString()
     const saved: string[] = []
-    for (const file of this.app.vault.getMarkdownFiles()) {
+    for (const file of [...this.dailyNotes.values()]) {
       if (this.app.metadataCache.getFileCache(file)?.frontmatter?.['Pentimento'] !== true) continue
       if (Date.now() - file.stat.mtime < QUIET_MS) continue
       try {

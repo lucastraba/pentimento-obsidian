@@ -1,7 +1,7 @@
 {
   "id": "pentimento",
   "name": "Pentimento",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "minAppVersion": "1.7.2",
   "description": "Save drafts of a note and see what changed between them. Get back passages you cut, and restore any earlier draft.",
   "author": "Lucas Traba",

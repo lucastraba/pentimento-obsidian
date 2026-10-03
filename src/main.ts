@@ -304,7 +304,12 @@ export default class PentimentoPlugin extends Plugin {
           await this.rewriteNote(file, (text) => stampFrontmatter(text, { 'History Folder': toRel }))
         } catch (e) {
           // the note still points at the old place, so its drafts go back there
-          await adapter.rename(to, from)
+          const reason = e instanceof Error ? e.message : String(e)
+          try {
+            await adapter.rename(to, from)
+          } catch {
+            throw new Error(`${reason}; its drafts are in ${to} but the note still points at ${from}, so move them back by hand`)
+          }
           throw e
         }
         moved.push(file.basename)

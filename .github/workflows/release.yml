@@ -17,9 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: pnpm
       - name: Check the tag matches manifest.json, package.json, and versions.json
         run: |
           tag=${GITHUB_REF_NAME}
@@ -27,9 +29,9 @@ jobs:
             [ "$v" = "$tag" ] || { echo "tag $tag does not match version $v"; exit 1; }
           done
           node -e "const v=require('./versions.json'); if (!v['$tag']) { console.error('versions.json has no entry for $tag'); process.exit(1) }"
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm test
       - name: Attest that the release files were built from this repository
         uses: actions/attest-build-provenance@v3
         with:

@@ -57,16 +57,16 @@ Until the plugin is in Obsidian's community list, download `main.js`, `manifest.
 From source:
 
 ```bash
-npm ci
-npm run build
-npm run install-vault -- "/path/to/your vault"
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run install-vault "/path/to/your vault"
 ```
 
 ## Development
 
-- `npm run dev` rebuilds on change.
-- `npm test` builds the plugin and runs `test/harness.mjs`, which loads the built `main.js` against a small fake of Obsidian's API and walks a note through saving, editing, restoring, daily drafts, and removal.
-- `npm run lint` applies Obsidian's own review rules ([eslint-plugin-obsidianmd](https://github.com/obsidianmd/eslint-plugin)).
+- `pnpm run dev` rebuilds on change.
+- `pnpm test` builds the plugin and runs `test/harness.mjs`, which loads the built `main.js` against a small fake of Obsidian's API and walks a note through saving, editing, restoring, daily drafts, and removal.
+- `pnpm run lint` applies Obsidian's own review rules ([eslint-plugin-obsidianmd](https://github.com/obsidianmd/eslint-plugin)).
 - The build fails if anything in the bundle needs Node, which Obsidian on phones doesn't have.
 
 The draft format (saving, reading, restoring, the diff, cuttings) comes from the `pentimento` npm package, where it is tested against the command-line tool's own output.

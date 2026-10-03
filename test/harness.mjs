@@ -21,6 +21,8 @@ const status = { text: '', shown: false, classes: new Set(), attrs: {},
   toggleClass(c, on) { on ? this.classes.add(c) : this.classes.delete(c) } }
 let active = null
 const handlers = {}
+let enumerationCount = 0
+let metadataReads = []
 const app = {
   vault: {
     adapter: {
@@ -39,7 +41,7 @@ const app = {
     },
     cachedRead: async (file) => fs.readFileSync(abs(file.path), 'utf8'),
     process: async (file, fn) => { const out = fn(fs.readFileSync(abs(file.path), 'utf8')); fs.writeFileSync(abs(file.path), out); return out },
-    getMarkdownFiles: () => fs.readdirSync(root).filter((f) => f.endsWith('.md')).map((f) => new TFile(f)),
+    getMarkdownFiles: () => { enumerationCount++; return fs.readdirSync(root).filter((f) => f.endsWith('.md')).map((f) => new TFile(f)) },
     on: (name, fn) => { handlers[name] = fn; return {} },
   },
   workspace: {
@@ -49,7 +51,9 @@ const app = {
     onLayoutReady: (fn) => fn(),
   },
   metadataCache: {
+    on: (name, fn) => { handlers[`metadata:${name}`] = fn; return {} },
     getFileCache: (file) => {
+      metadataReads.push(file.path)
       const m = /^---\n([\s\S]*?)\n---/.exec(fs.readFileSync(abs(file.path), 'utf8'))
       return { frontmatter: m && /^Pentimento: true$/m.test(m[1]) ? { Pentimento: true } : undefined }
     },
@@ -86,6 +90,7 @@ const plugin = new Pentimento(app)
 await plugin.onload()
 await settle()
 assert.equal(status.text, 'No drafts')
+assert.equal(enumerationCount, 0, 'disabled daily drafts do not enumerate the vault')
 assert.equal(plugin.commands['save-draft'].checkCallback(true), true)
 
 await plugin.saveFile(active)
@@ -133,6 +138,35 @@ assert.equal(notices.at(-1), 'Saved daily drafts: Harbor')
 assert.ok(!fs.existsSync(abs('.history/Untracked')), 'notes without drafts are never touched')
 assert.match(read('.history/Harbor/meta.yml'), /source: daily draft/)
 
+assert.equal(enumerationCount, 1, 'daily checks discover existing notes only once')
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(!metadataReads.includes('Untracked.md'), 'subsequent checks inspect only participating notes')
+plugin.settings.dailyDrafts = false
+await plugin.runDailyDrafts()
+plugin.settings.dailyDrafts = true
+await plugin.runDailyDrafts()
+assert.equal(enumerationCount, 1, 'reenabling daily drafts reuses the maintained set')
+
+// An external tool stamps a note after initial discovery; metadata events enroll it.
+write('External.md', read('Harbor.md').replace('History Folder: .history/Harbor', 'History Folder: .history/External'))
+handlers['metadata:changed'](new TFile('External.md'))
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(metadataReads.includes('External.md'), 'externally tracked notes join daily checks')
+write('External.md', '# No longer tracked\n')
+handlers['metadata:changed'](new TFile('External.md'))
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(!metadataReads.includes('External.md'), 'removing the property stops daily checks')
+write('External.md', read('Harbor.md'))
+handlers['metadata:changed'](new TFile('External.md'))
+fs.rmSync(abs('External.md'))
+handlers.delete(new TFile('External.md'))
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(!metadataReads.includes('External.md'), 'deleted notes leave daily checks')
+
 // remove Pentimento from the note: properties off, history gone, text untouched
 const before = read('Harbor.md').replace(/^---\n[\s\S]*?\n---\n\n?/, '')
 const confirmations = []
@@ -144,6 +178,9 @@ await confirmations[0].onConfirm()
 assert.ok(!fs.existsSync(abs('.history')), 'the history folder is gone, and the empty .history with it')
 assert.equal(read('Harbor.md'), before, 'the note keeps its text and loses only the properties')
 assert.match(notices.at(-1), /^Removed 6 drafts from Harbor$/)
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(!metadataReads.includes('Harbor.md'), 'removing drafts also removes the note from daily checks')
 
 // moving a note to another folder takes its drafts along
 fs.mkdirSync(abs('Songs')); fs.mkdirSync(abs('Archive'))
@@ -151,6 +188,9 @@ write('Songs/Move.md', '# Move\n\nfirst words of a song\n')
 const moving = new TFile('Songs/Move.md')
 await plugin.saveFile(moving)
 assert.ok(fs.existsSync(abs('Songs/.history/Move/r001.md')))
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(metadataReads.includes('Songs/Move.md'), 'saving a new note enrolls it without another scan')
 fs.renameSync(abs('Songs/Move.md'), abs('Archive/Move.md'))
 handlers.rename(new TFile('Archive/Move.md'), 'Songs/Move.md')
 await new Promise((r) => setTimeout(r, 800))
@@ -161,6 +201,11 @@ fs.renameSync(abs('Archive/Move.md'), abs('Archive/Moved.md'))
 handlers.rename(new TFile('Archive/Moved.md'), 'Archive/Move.md')
 await settle()
 assert.ok(fs.existsSync(abs('Archive/.history/Move/r001.md')), 'a rename in place moves nothing')
+metadataReads = []
+await plugin.runDailyDrafts()
+assert.ok(metadataReads.includes('Archive/Moved.md'), 'daily drafts follow renamed notes')
+assert.ok(!metadataReads.includes('Songs/Move.md') && !metadataReads.includes('Archive/Move.md'), 'old paths leave daily checks')
+assert.equal(enumerationCount, 1, 'file and metadata events never rescan the vault')
 
 console.log('harness: all checks passed')
 console.log(notices.join('\n'))

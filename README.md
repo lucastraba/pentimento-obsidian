@@ -52,7 +52,9 @@ Drafts use the same format as the [Pentimento command-line tool](https://github.
 
 ## Installing
 
-Until the plugin is in Obsidian's community list, download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/lucastraba/pentimento-obsidian/releases/latest) into `<your vault>/.obsidian/plugins/pentimento/`, then turn Pentimento on in Settings → Community plugins.
+Pentimento is in Obsidian's community list: open Settings → Community plugins → Browse, search for Pentimento, install it, and turn it on.
+
+To install by hand instead, download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/lucastraba/pentimento-obsidian/releases/latest) into `<your vault>/.obsidian/plugins/pentimento/`, then turn Pentimento on in Settings → Community plugins.
 
 From source:
 
